@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="UTF-8"/>
@@ -535,7 +535,7 @@ let nid=1,editId=null,editCol=null;
 let saveTimer=null;
 
 /* ── JSONBin sync ── */
-const BIN_ID='6a3c74c4da38895dfefa6485';
+const BIN_ID='6a3cea86f5f4af5e292db9e8';
 const MASTER_KEY='$2a$10$6YJ9aLVKZb7E23VA94jtq.FjSpBniJoi.pIDHCILX2OMqQkHndFO';
 const ACCESS_KEY='$2a$10$6rCDT9T6lmnBrY0UTCkw2.W2PKU/JmQfJNGWQfYJdTWIRFhROl.ZK';
 const API_URL=`https://api.jsonbin.io/v3/b/${BIN_ID}`;
@@ -550,7 +550,6 @@ function setSyncUI(state,text){
 
 async function load(){
   setSyncUI('syncing','Завантаження...');
-  /* always load from localStorage first for instant render */
   try{const s=localStorage.getItem('pareto-sync');if(s){const p=JSON.parse(s);data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;}}catch(e){}
   try{
     const r=await fetch(API_URL+'/latest',{
@@ -558,10 +557,11 @@ async function load(){
       headers:{
         'X-Master-Key':MASTER_KEY,
         'X-Access-Key':ACCESS_KEY,
-        'X-Bin-Meta':false
+        'X-Bin-Meta':'false',
+        'Content-Type':'application/json'
       }
     });
-    if(!r.ok)throw new Error(r.status);
+    if(!r.ok){const err=await r.text();throw new Error(r.status+' '+err);}
     const j=await r.json();
     const p=j.record||j;
     if(p&&p.data){
@@ -572,6 +572,7 @@ async function load(){
     }
     setSyncUI('ok','Синхронізовано ✓');
   }catch(e){
+    console.error('Load error:',e);
     setSyncUI('err','Офлайн — дані локальні');
   }
 }
@@ -582,7 +583,6 @@ async function save(){
   saveTimer=setTimeout(async()=>{
     setSyncUI('syncing','Збереження...');
     try{
-      const body=JSON.stringify({data,archive,notes,nid});
       const r=await fetch(API_URL,{
         method:'PUT',
         headers:{
@@ -590,12 +590,13 @@ async function save(){
           'X-Master-Key':MASTER_KEY,
           'X-Access-Key':ACCESS_KEY
         },
-        body
+        body:JSON.stringify({data,archive,notes,nid})
       });
-      if(!r.ok)throw new Error(r.status);
+      if(!r.ok){const err=await r.text();throw new Error(r.status+' '+err);}
       const now=new Date();
       setSyncUI('ok',`Збережено ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} ✓`);
     }catch(e){
+      console.error('Save error:',e);
       setSyncUI('err','Помилка — збережено локально');
     }
   },1500);
