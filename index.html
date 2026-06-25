@@ -362,6 +362,13 @@ body{
 .tag-opt{font-size:13px;padding:5px 12px;border-radius:20px;cursor:pointer;border:1.5px solid transparent;transition:all .12s;white-space:nowrap;line-height:1.4;font-weight:500}
 .tag-opt:hover{opacity:.85}
 .tag-opt.sel{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+.sync-badge{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;padding:6px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);color:var(--text2);white-space:nowrap;transition:all .3s;cursor:default}
+.sync-badge.syncing{border-color:#fbbf24;color:#b45309;background:#fffbeb}
+.sync-badge.ok{border-color:#86efac;color:#166534;background:#f0fdf4}
+.sync-badge.err{border-color:#fca5a5;color:#991b1b;background:#fef2f2}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0}
+.sync-badge.syncing .sync-dot{animation:blink .8s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
 </style>
 </head>
 <body>
@@ -375,6 +382,7 @@ body{
         <div class="hdr-sub">Опануйте правило важеля 80/20</div>
       </div>
     </div>
+    <div class="sync-badge" id="sync-badge"><span class="sync-dot"></span><span id="sync-text">Підключення...</span></div>
   </div>
 
   <div class="cols">
@@ -524,9 +532,74 @@ const PRIO_H={none:'',high:'❤️',med:'🧡',low:'💛'};
 
 let data={vital:[],trivial:[]},archive=[],notes=[];
 let nid=1,editId=null,editCol=null;
+let saveTimer=null;
 
-function load(){try{const s=localStorage.getItem('pareto-light');if(s){const p=JSON.parse(s);data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;}}catch(e){}}
-function save(){try{localStorage.setItem('pareto-light',JSON.stringify({data,archive,notes,nid}));}catch(e){}}
+/* ── JSONBin sync ── */
+const BIN_ID='6a3c74c4da38895dfefa6485';
+const MASTER_KEY='$2a$10$6YJ9aLVKZb7E23VA94jtq.FjSpBniJoi.pIDHCILX2OMqQkHndFO';
+const ACCESS_KEY='$2a$10$6rCDT9T6lmnBrY0UTCkw2.W2PKU/JmQfJNGWQfYJdTWIRFhROl.ZK';
+const API_URL=`https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+function setSyncUI(state,text){
+  const b=document.getElementById('sync-badge');
+  const t=document.getElementById('sync-text');
+  if(!b)return;
+  b.className='sync-badge '+state;
+  t.textContent=text;
+}
+
+async function load(){
+  setSyncUI('syncing','Завантаження...');
+  /* always load from localStorage first for instant render */
+  try{const s=localStorage.getItem('pareto-sync');if(s){const p=JSON.parse(s);data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;}}catch(e){}
+  try{
+    const r=await fetch(API_URL+'/latest',{
+      method:'GET',
+      headers:{
+        'X-Master-Key':MASTER_KEY,
+        'X-Access-Key':ACCESS_KEY,
+        'X-Bin-Meta':false
+      }
+    });
+    if(!r.ok)throw new Error(r.status);
+    const j=await r.json();
+    const p=j.record||j;
+    if(p&&p.data){
+      data=p.data;
+      archive=p.archive||[];
+      notes=p.notes||[];
+      nid=p.nid||1;
+    }
+    setSyncUI('ok','Синхронізовано ✓');
+  }catch(e){
+    setSyncUI('err','Офлайн — дані локальні');
+  }
+}
+
+async function save(){
+  try{localStorage.setItem('pareto-sync',JSON.stringify({data,archive,notes,nid}));}catch(e){}
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{
+    setSyncUI('syncing','Збереження...');
+    try{
+      const body=JSON.stringify({data,archive,notes,nid});
+      const r=await fetch(API_URL,{
+        method:'PUT',
+        headers:{
+          'Content-Type':'application/json',
+          'X-Master-Key':MASTER_KEY,
+          'X-Access-Key':ACCESS_KEY
+        },
+        body
+      });
+      if(!r.ok)throw new Error(r.status);
+      const now=new Date();
+      setSyncUI('ok',`Збережено ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} ✓`);
+    }catch(e){
+      setSyncUI('err','Помилка — збережено локально');
+    }
+  },1500);
+}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function fmtDate(d){if(!d)return'';const p=d.split('-');return p[2]+'.'+p[1]+'.'+p[0];}
 function cycle(s){return s==='none'?'inprogress':s==='inprogress'?'done':'none';}
@@ -711,19 +784,7 @@ function dndDrop(e,col){
   renderAll();save();
 }
 
-load();
-if(!data.vital.length&&!data.trivial.length){
-  data.vital.push({id:nid++,text:'Вивчити англійську мову',star:'inprogress',tag:'study',prio:'high',date:'2026-07-01',open:true,
-    subs:[{id:nid++,text:'Записатись на курс',star:'done'},{id:nid++,text:'Практика 30 хв щодня',star:'inprogress'},{id:nid++,text:'5 відео на YouTube',star:'none'}]});
-  data.vital.push({id:nid++,text:'Запустити новий проєкт',star:'none',tag:'project',prio:'high',date:'',open:false,
-    subs:[{id:nid++,text:'Скласти план дій',star:'none'},{id:nid++,text:'Зібрати команду',star:'none'}]});
-  data.trivial.push({id:nid++,text:'Купити зубну щітку',star:'none',tag:'shopping',prio:'low',date:'',open:false,subs:[]});
-  data.trivial.push({id:nid++,text:'Поїздка до Трускавця',star:'none',tag:'travel',prio:'med',date:'2026-08-10',open:false,
-    subs:[{id:nid++,text:'Забронювати готель',star:'none'},{id:nid++,text:'Купити квитки',star:'none'}]});
-  notes.push({id:nid++,text:'Правило 80/20: 20% зусиль дають 80% результату.'});
-  notes.push({id:nid++,text:'Фокусуйся на ВАЖЛИВИХ завданнях щодня.'});
-}
-renderAll();
+load().then(()=>{renderAll();});
 </script>
 </body>
 </html>
