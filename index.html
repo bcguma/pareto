@@ -534,11 +534,8 @@ let data={vital:[],trivial:[]},archive=[],notes=[];
 let nid=1,editId=null,editCol=null;
 let saveTimer=null;
 
-/* ── JSONBin sync ── */
-const BIN_ID='6a3cea86f5f4af5e292db9e8';
-const MASTER_KEY='$2a$10$6YJ9aLVKZb7E23VA94jtq.FjSpBniJoi.pIDHCILX2OMqQkHndFO';
-const ACCESS_KEY='$2a$10$6rCDT9T6lmnBrY0UTCkw2.W2PKU/JmQfJNGWQfYJdTWIRFhROl.ZK';
-const API_URL=`https://api.jsonbin.io/v3/b/${BIN_ID}`;
+/* ── Google Apps Script sync ── */
+const GAS_URL='https://script.google.com/macros/s/AKfycbzFnDeDkfr1cQT5BxS5_t_ZAQaHbaVNH0BaSBZOabXo5VU_y3_Twzi9c0p0LQ4DXoYD/exec';
 
 function setSyncUI(state,text){
   const b=document.getElementById('sync-badge');
@@ -550,25 +547,13 @@ function setSyncUI(state,text){
 
 async function load(){
   setSyncUI('syncing','Завантаження...');
-  try{const s=localStorage.getItem('pareto-sync');if(s){const p=JSON.parse(s);data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;}}catch(e){}
+  try{const s=localStorage.getItem('pareto-gas');if(s){const p=JSON.parse(s);data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;}}catch(e){}
   try{
-    const r=await fetch(API_URL+'/latest',{
-      method:'GET',
-      headers:{
-        'X-Master-Key':MASTER_KEY,
-        'X-Access-Key':ACCESS_KEY,
-        'X-Bin-Meta':'false',
-        'Content-Type':'application/json'
-      }
-    });
-    if(!r.ok){const err=await r.text();throw new Error(r.status+' '+err);}
-    const j=await r.json();
-    const p=j.record||j;
+    const r=await fetch(GAS_URL,{method:'GET'});
+    if(!r.ok)throw new Error(r.status);
+    const p=await r.json();
     if(p&&p.data){
-      data=p.data;
-      archive=p.archive||[];
-      notes=p.notes||[];
-      nid=p.nid||1;
+      data=p.data;archive=p.archive||[];notes=p.notes||[];nid=p.nid||1;
     }
     setSyncUI('ok','Синхронізовано ✓');
   }catch(e){
@@ -578,21 +563,16 @@ async function load(){
 }
 
 async function save(){
-  try{localStorage.setItem('pareto-sync',JSON.stringify({data,archive,notes,nid}));}catch(e){}
+  try{localStorage.setItem('pareto-gas',JSON.stringify({data,archive,notes,nid}));}catch(e){}
   clearTimeout(saveTimer);
   saveTimer=setTimeout(async()=>{
     setSyncUI('syncing','Збереження...');
     try{
-      const r=await fetch(API_URL,{
-        method:'PUT',
-        headers:{
-          'Content-Type':'application/json',
-          'X-Master-Key':MASTER_KEY,
-          'X-Access-Key':ACCESS_KEY
-        },
+      const r=await fetch(GAS_URL,{
+        method:'POST',
         body:JSON.stringify({data,archive,notes,nid})
       });
-      if(!r.ok){const err=await r.text();throw new Error(r.status+' '+err);}
+      if(!r.ok)throw new Error(r.status);
       const now=new Date();
       setSyncUI('ok',`Збережено ${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')} ✓`);
     }catch(e){
